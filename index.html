@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>E3-HACKER – SMS OTP HUB</title>
+  <title>E3-HACKER – SMS OTP Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -100,7 +100,7 @@
     <!-- Header -->
     <header class="flex flex-col sm:flex-row justify-between items-center py-4 border-b border-border-color gap-4">
       <h1 class="text-3xl font-extrabold vip-title">
-        💀 E3-HACKER – OTP SMS 💀
+        💎 E3-HACKER – SMS OTP Hub 💎
       </h1>
 
       <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -442,4 +442,81 @@
         async function analyzeWithGemini(message, apiKey) {
             const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             
-            const systemPrompt = "You are an expert message analyzer. Analyze the following SMS message. First, state i
+            const systemPrompt = "You are an expert message analyzer. Analyze the following SMS message. First, state its purpose (e.g., 'This is a login code', 'This is a marketing alert', 'This is a potential scam'). Second, extract any useful information, like the service name or the OTP code. Be concise and use simple bullet points.";
+            const userQuery = message;
+            
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+            
+            try {
+                // Exponential backoff
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) { // Retry up to 3 times
+                    response = await fetch(GEMINI_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) break; // Success
+                    if (response.status === 429 || response.status >= 500) {
+                        // Throttling or server error, wait and retry
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2;
+                    } else {
+                        // Don't retry on client errors (4xx) other than 429
+                        break;
+                    }
+                }
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error ${response.status}: ${errorText}`);
+                }
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (text) {
+                    // Format text for HTML (replace newlines with <br>)
+                    const formattedText = text.replace(/\n/g, '<br>');
+                    aiModalContent.innerHTML = `
+                        <p class="font-semibold text-gray-400">Original Message:</p>
+                        <p class="p-3 bg-bg-dark rounded-lg text-sm">"${message}"</p>
+                        <p class="font-semibold text-gray-400 mt-4">AI Analysis:</p>
+                        <div class="p-3 bg-bg-dark rounded-lg text-sm">${formattedText}</div>
+                    `;
+                } else {
+                    throw new Error("No text content found in Gemini response.");
+                }
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                aiModalContent.innerHTML = `
+                    <p class="font-semibold text-gray-400">Original Message:</p>
+                    <p class="p-3 bg-bg-dark rounded-lg text-sm">"${message}"</p>
+                    <p class="font-semibold text-red-400 mt-4">Analysis Failed:</p>
+                    <p class="p-3 bg-red-900 bg-opacity-30 text-red-300 rounded-lg text-sm">${error.message}</p>
+                `;
+            }
+        }
+        
+        // --- End Gemini Functions ---
+
+        // Initial data load
+        document.addEventListener('DOMContentLoaded', () => {
+            feather.replace(); // Load initial icons
+            fetchNumbersList(); // Fetch number list once
+            fetchSMS(); // Fetch SMS list once
+            
+            // Add event listeners
+            generateBtn.addEventListener('click', displayNewNumber);
+            refreshSmsBtn.addEventListener('click', fetchSMS);
+        });
+    </script>
+</body>
+</html>
